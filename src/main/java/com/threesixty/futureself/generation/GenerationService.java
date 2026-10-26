@@ -109,6 +109,9 @@ public class GenerationService {
                     "Upload must be an image.");
         }
 
+        // Validate supported formats before starting background work.
+        getFilename(contentType);
+
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
                     "AI generation is not configured. "
@@ -147,30 +150,86 @@ public class GenerationService {
         jobs.remove(id);
     }
 
+    /**
+     * Creates the Future Self image prompt.
+     */
     private String buildPrompt(int age, String occupation) {
-        String safeOccupation =
-                occupation.replaceAll("[\\r\\n]", " ");
 
-        return "Edit the supplied reference photograph into a "
-                + "photorealistic, respectful aspirational visualisation "
-                + "of the same adult person approximately ten years older. "
-                + "Preserve their recognizable facial identity, natural "
-                + "skin tone, ethnicity, and distinctive features as "
-                + "closely as possible. The person is a "
+        String safeOccupation = occupation
+                .replaceAll("[\\r\\n]", " ")
+                .trim();
+
+        return "Create a premium, photorealistic FUTURE SELF portrait "
+                + "using the uploaded photograph as the primary identity reference. "
+
+                + "CORE OBJECTIVE: "
+                + "Visualize the same adult person approximately ten years "
+                + "into their future, representing personal growth, confidence, "
+                + "leadership potential, and professional aspirations. "
+                + "The result should feel inspiring, empowering, authentic, "
+                + "and visually compelling, like a high-end editorial portrait "
+                + "created for a prestigious African women's leadership conference. "
+
+                + "IDENTITY PRESERVATION — HIGHEST PRIORITY: "
+                + "Preserve the person's recognizable identity as faithfully "
+                + "as possible. Maintain their distinctive facial structure, "
+                + "eye shape, nose, lips, natural skin tone, ethnicity, and "
+                + "other defining features. The result must remain recognizably "
+                + "the same person as in the reference photograph. "
+                + "Do not replace their face with a generic model or another "
+                + "person. Avoid excessive beautification, artificial facial "
+                + "changes, plastic-looking skin, or unrealistic aging. "
+
+                + "FUTURE-SELF VISUALIZATION: "
+                + "Depict a believable version of the person approximately "
+                + "ten years older, with subtle, natural signs of maturity "
+                + "where appropriate. Convey confidence, composure, wisdom, "
+                + "ambition, and a strong sense of purpose through expression, "
+                + "posture, styling, and environment. The future should feel "
+                + "aspirational yet attainable, never exaggerated or fantastical. "
+
+                + "PROFESSIONAL ASPIRATION: "
+                + "The person's stated occupation is: "
                 + safeOccupation
-                + "; reflect this occupation through tasteful, plausible "
-                + "professional styling, clothing, tools or environment "
-                + "without using stereotypes. Create a confident, natural "
-                + "pose, realistic skin texture, excellent photographic "
-                + "detail, and elegant editorial lighting. Premium "
-                + "contemporary African leadership campaign aesthetic, "
-                + "warm golden highlights and subtle deep-red/black "
-                + "accents. Keep the person's face the focus. No text, "
-                + "logos, watermarks, collage, or extra people. Do not "
-                + "radically change facial structure. This is an artistic "
-                + "possibility, not a prediction. The person's current "
-                + "stated age is "
-                + age + ".";
+                + ". Use this occupation as contextual guidance for clothing, "
+                + "accessories, environment, and professional setting. "
+                + "Reflect the occupation naturally and respectfully, "
+                + "without stereotypes. Where appropriate, communicate "
+                + "leadership, expertise, creativity, entrepreneurship, "
+                + "influence, or professional excellence through the composition. "
+
+                + "ART DIRECTION: "
+                + "Use premium contemporary editorial photography with a "
+                + "sophisticated African leadership campaign aesthetic. "
+                + "Apply elegant cinematic lighting, realistic skin texture, "
+                + "refined composition, natural proportions, subtle depth "
+                + "of field, and a tasteful palette featuring warm golden "
+                + "highlights with restrained deep-red, burgundy, and black "
+                + "accents. Keep the person's face clear, prominent, and "
+                + "visually compelling. "
+
+                + "COMPOSITION AND QUALITY: "
+                + "Create one cohesive, high-resolution portrait with realistic "
+                + "anatomy, natural hands where visible, believable clothing, "
+                + "balanced lighting, and professional photographic detail. "
+                + "The final image should be polished enough for a premium "
+                + "conference experience and suitable for digital sharing. "
+
+                + "STRICT EXCLUSIONS: "
+                + "No text, captions, typography, logos, watermarks, collages, "
+                + "extra people, distorted facial features, exaggerated aging, "
+                + "unrealistic body proportions, artificial skin, or dramatic "
+                + "changes that undermine identity preservation. "
+
+                + "EMOTIONAL INTENT: "
+                + "The image should communicate: This is a vision of who I "
+                + "could become. It is an artistic visualization of possibility, "
+                + "growth, and potential, not a prediction of the person's "
+                + "actual future. "
+
+                + "The person's current stated age is "
+                + age
+                + ". Visualize approximately ten years of natural maturation.";
     }
 
     private void runGeneration(
@@ -254,8 +313,7 @@ public class GenerationService {
                     job.getId(), output.length);
 
         } catch (RestClientResponseException ex) {
-            // Do not log request headers or the API key.
-            // OpenAI's response body can contain diagnostic details.
+
             log.error(
                     "OpenAI API request failed. Job ID: {}, "
                             + "HTTP status: {}, response: {}",
@@ -266,6 +324,7 @@ public class GenerationService {
             job.fail(GENERIC_FAILURE_MESSAGE);
 
         } catch (Exception ex) {
+
             log.error(
                     "Image generation failed unexpectedly. Job ID: {}, "
                             + "error type: {}",
@@ -278,6 +337,7 @@ public class GenerationService {
     }
 
     private String getFilename(String contentType) {
+
         return switch (contentType.toLowerCase()) {
             case "image/png" -> "reference.png";
             case "image/webp" -> "reference.webp";
@@ -288,11 +348,11 @@ public class GenerationService {
     }
 
     private String sanitizeError(String response) {
+
         if (response == null || response.isBlank()) {
             return "(empty error response)";
         }
 
-        // Limit log size and redact any accidental bearer-key text.
         String sanitized = response
                 .replaceAll(
                         "(?i)Bearer\\s+\\S+",
