@@ -517,10 +517,14 @@ public class GenerationService {
             int x = WIN_X + (WIN_W - sw) / 2;
             int y = WIN_Y + (WIN_H - sh) / 2;
 
-            g.setClip(WIN_X, WIN_Y, WIN_W, WIN_H);
+            // Draw the frame first, then the portrait on top, clipped to the
+            // photo window. This works even if the frame file's window is not
+            // truly transparent (e.g. a checkerboard baked into the pixels).
+            g.drawImage(frame, 0, 0, null);
+            g.setClip(new java.awt.geom.RoundRectangle2D.Double(
+                    WIN_X + 2, WIN_Y + 2, WIN_W - 4, WIN_H - 4, 24, 24));
             g.drawImage(portrait, x, y, sw, sh, null);
             g.setClip(null);
-            g.drawImage(frame, 0, 0, null);
         } finally {
             g.dispose();
         }
