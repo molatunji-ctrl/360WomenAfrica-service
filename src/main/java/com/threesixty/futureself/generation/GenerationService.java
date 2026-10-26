@@ -3,26 +3,31 @@ package com.threesixty.futureself.generation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.imageio.ImageIO;
 import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+
+import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
@@ -48,11 +53,28 @@ public class GenerationService {
             @Value("${app.openai.model:gpt-image-1.5}") String model,
             ObjectMapper objectMapper
     ) {
+        if (apiKey == null || apiKey.isBlank()) {
+            System.err.println(
+                    "[FutureSelf] WARNING: OPENAI_API_KEY is not configured."
+            );
+        }
+
         this.objectMapper = objectMapper;
         this.model = model;
 
+        SimpleClientHttpRequestFactory requestFactory =
+                new SimpleClientHttpRequestFactory();
+
+        // Maximum time to establish the connection.
+        requestFactory.setConnectTimeout(Duration.ofSeconds(20));
+
+        // Maximum wait for the HTTP response.
+        // This prevents a request from waiting indefinitely.
+        requestFactory.setReadTimeout(Duration.ofSeconds(240));
+
         this.openAiClient = RestClient.builder()
                 .baseUrl("https://api.openai.com/v1")
+                .requestFactory(requestFactory)
                 .defaultHeader(
                         HttpHeaders.AUTHORIZATION,
                         "Bearer " + apiKey
@@ -60,6 +82,10 @@ public class GenerationService {
                 .build();
     }
 
+    /**
+     * Validate the request, create a job, and submit it
+     * to the background executor.
+     */
     public GenerationJob create(
             MultipartFile image,
             String name,
@@ -106,40 +132,48 @@ public class GenerationService {
 
         String contentType = image.getContentType();
 
-        if (contentType == null ||
-                !(contentType.equalsIgnoreCase("image/jpeg")
-                        || contentType.equalsIgnoreCase("image/png")
-                        || contentType.equalsIgnoreCase("image/webp"))) {
+        if (contentType == null
+                || !(contentType.equalsIgnoreCase("image/jpeg")
+                || contentType.equalsIgnoreCase("image/png"))) {
             throw new IllegalArgumentException(
-                    "Upload a JPG, PNG, or WebP photograph."
+                    "Please upload a JPG or PNG photograph."
             );
         }
 
         try {
             byte[] uploadedBytes = image.getBytes();
 
-            BufferedImage decoded =
-                    ImageIO.read(new ByteArrayInputStream(uploadedBytes));
+            BufferedImage decoded = ImageIO.read(
+                    new ByteArrayInputStream(uploadedBytes)
+            );
 
             if (decoded == null) {
                 throw new IllegalArgumentException(
-                        "The uploaded file is not a valid supported image."
+                        "The uploaded file is not a valid image."
                 );
             }
 
             String id = UUID.randomUUID().toString();
-            GenerationJob job = new GenerationJob(id);
 
+            GenerationJob job = new GenerationJob(id);
             jobs.put(id, job);
+
+            String safeName = name.trim();
+            String safeOccupation = occupation.trim();
+            String safeContentType = contentType;
 
             executor.submit(() -> runGeneration(
                     id,
                     uploadedBytes,
-                    contentType,
-                    name.trim(),
+                    safeContentType,
+                    safeName,
                     age,
-                    occupation.trim()
+                    safeOccupation
             ));
+
+            System.out.println(
+                    "[FutureSelf] Job queued: " + id
+            );
 
             return job;
 
@@ -150,6 +184,9 @@ public class GenerationService {
         }
     }
 
+    /**
+     * Find a generation job by ID.
+     */
     public GenerationJob find(String id) {
         GenerationJob job = jobs.get(id);
 
@@ -162,6 +199,9 @@ public class GenerationService {
         return job;
     }
 
+    /**
+     * Return the final composited PNG.
+     */
     public byte[] getImage(String id) {
         GenerationJob job = find(id);
 
@@ -175,6 +215,9 @@ public class GenerationService {
         return job.getImage();
     }
 
+    /**
+     * Remove a job from the in-memory store.
+     */
     public void delete(String id) {
         GenerationJob job = jobs.remove(id);
 
@@ -185,8 +228,15 @@ public class GenerationService {
         }
 
         job.delete();
+
+        System.out.println(
+                "[FutureSelf] Job deleted: " + id
+        );
     }
 
+    /**
+     * Generate the portrait, then apply the official frame.
+     */
     private void runGeneration(
             String id,
             byte[] uploadedBytes,
@@ -195,38 +245,63 @@ public class GenerationService {
             int age,
             String occupation
     ) {
+        long startedAt = System.nanoTime();
+
+        System.out.println(
+                "[FutureSelf] Generation started: " + id
+        );
+
         GenerationJob job = jobs.get(id);
 
         if (job == null) {
+            System.out.println(
+                    "[FutureSelf] Job no longer exists: " + id
+            );
             return;
         }
 
         try {
             job.processing();
 
-            String prompt = buildPrompt(name, age, occupation);
+            String prompt = buildPrompt(
+                    name,
+                    age,
+                    occupation
+            );
 
-            MultipartBodyBuilder body = new MultipartBodyBuilder();
+            MultipartBodyBuilder body =
+                    new MultipartBodyBuilder();
 
             body.part("model", model);
             body.part("prompt", prompt);
             body.part("size", "1024x1024");
 
-            MediaType uploadType = MediaType.parseMediaType(contentType);
+            // Test medium quality to balance image quality and speed.
+            body.part("quality", "medium");
+
+            MediaType uploadType =
+                    MediaType.parseMediaType(contentType);
 
             body.part(
                     "image",
                     new ByteArrayResource(uploadedBytes) {
                         @Override
                         public String getFilename() {
-                            return contentType.equalsIgnoreCase("image/png")
+                            return contentType.equalsIgnoreCase(
+                                    "image/png"
+                            )
                                     ? "reference.png"
-                                    : contentType.equalsIgnoreCase("image/webp")
-                                    ? "reference.webp"
                                     : "reference.jpg";
                         }
                     }
             ).contentType(uploadType);
+
+            // Measure time spent waiting for OpenAI.
+            long openAiStartedAt = System.nanoTime();
+
+            System.out.println(
+                    "[FutureSelf] Sending image to OpenAI: " + id
+            );
 
             String response = openAiClient.post()
                     .uri("/images/edits")
@@ -235,7 +310,20 @@ public class GenerationService {
                     .retrieve()
                     .body(String.class);
 
+            System.out.println(
+                    "[FutureSelf] OpenAI response received in "
+                            + elapsedSeconds(openAiStartedAt)
+                            + " seconds. Job: " + id
+            );
+
+            if (response == null || response.isBlank()) {
+                throw new IllegalStateException(
+                        "The image service returned an empty response."
+                );
+            }
+
             JsonNode root = objectMapper.readTree(response);
+
             String base64 = root.path("data")
                     .path(0)
                     .path("b64_json")
@@ -247,7 +335,8 @@ public class GenerationService {
                 );
             }
 
-            byte[] portraitBytes = Base64.getDecoder().decode(base64);
+            byte[] portraitBytes =
+                    Base64.getDecoder().decode(base64);
 
             BufferedImage portrait = ImageIO.read(
                     new ByteArrayInputStream(portraitBytes)
@@ -259,30 +348,60 @@ public class GenerationService {
                 );
             }
 
+            // Measure time spent applying the official frame.
+            long frameStartedAt = System.nanoTime();
+
+            System.out.println(
+                    "[FutureSelf] Applying conference frame: " + id
+            );
+
             byte[] finalImage = applyFrame(portrait);
+
+            System.out.println(
+                    "[FutureSelf] Frame compositing took "
+                            + elapsedSeconds(frameStartedAt)
+                            + " seconds. Job: " + id
+            );
 
             GenerationJob latestJob = jobs.get(id);
 
             if (latestJob != null
                     && !"DELETED".equals(latestJob.getStatus())) {
+
                 latestJob.complete(finalImage);
+
+                System.out.println(
+                        "[FutureSelf] Generation completed in "
+                                + elapsedSeconds(startedAt)
+                                + " seconds. Job: " + id
+                );
             }
 
         } catch (RestClientResponseException e) {
+            System.err.println(
+                    "[FutureSelf] OpenAI HTTP error for job "
+                            + id
+                            + ": status=" + e.getStatusCode()
+                            + ", body=" + sanitizeError(
+                            e.getResponseBodyAsString()
+                    )
+            );
+
             GenerationJob latestJob = jobs.get(id);
 
             if (latestJob != null) {
                 latestJob.fail(
-                        "Image generation failed. Please try again later."
+                        "Image generation failed. Please try again."
                 );
             }
 
+        } catch (Exception e) {
             System.err.println(
-                    "OpenAI API error: HTTP " + e.getStatusCode()
-                            + " - " + e.getResponseBodyAsString()
+                    "[FutureSelf] Generation error for job "
+                            + id + ": " + e.getClass().getSimpleName()
+                            + " - " + e.getMessage()
             );
 
-        } catch (Exception e) {
             GenerationJob latestJob = jobs.get(id);
 
             if (latestJob != null) {
@@ -290,13 +409,12 @@ public class GenerationService {
                         "We could not create your portrait. Please try again."
                 );
             }
-
-            System.err.println(
-                    "Generation error: " + e.getMessage()
-            );
         }
     }
 
+    /**
+     * Prompt for the future-self portrait.
+     */
     private String buildPrompt(
             String name,
             int age,
@@ -306,44 +424,52 @@ public class GenerationService {
                 Create a premium, photorealistic future-self portrait
                 using the uploaded photograph as the primary identity reference.
 
-                Preserve the person's recognizable facial identity, face shape,
-                eyes, nose, lips, skin tone, ethnicity, and distinctive features.
-                The person must remain recognizable as the same individual.
+                Preserve the person's recognizable facial identity, facial
+                structure, skin tone, ethnicity, eyes, nose, lips, jawline,
+                and distinctive features. The person must remain clearly
+                recognizable as the same individual.
 
-                Depict a believable, subtle age progression of approximately
+                Apply subtle, believable age progression of approximately
                 ten years. Do not replace the person with a generic model.
 
-                Future professional context:
+                Future professional vision:
                 The person is an accomplished African business leader,
-                executive, company director, or CEO ten years in the future.
+                company director, founder, or CEO ten years in the future.
 
-                Current attendee-provided details for contextual guidance:
+                Attendee information for contextual guidance:
                 Name: %s
                 Current age: %d
                 Current occupation: %s
 
-                Create a sophisticated, tailored executive outfit and a
-                believable luxury office with floor-to-ceiling windows,
-                a modern city skyline, warm golden architectural lighting,
-                dark wood, glass, brushed metal, and restrained African-inspired
-                design influences.
+                Dress the person in sophisticated premium executive fashion
+                suitable for an internationally successful African business
+                leader. Use a tailored suit or elegant executive outfit,
+                refined accessories, realistic fabric, and natural proportions.
 
-                Position the person seated confidently behind an executive desk,
-                facing the camera. Use a square composition suitable for a
-                conference portrait frame. Keep the head, hair, face, shoulders,
-                and hands away from image edges.
+                Place the person in a luxurious but believable futuristic
+                executive office with floor-to-ceiling glass windows,
+                a modern city skyline, premium dark wood, glass, brushed
+                metal, restrained African-inspired design influences,
+                and warm golden architectural lighting.
 
-                Use realistic skin texture, natural proportions, accurate hands,
-                realistic materials, professional corporate editorial lighting,
-                and high-end photographic quality.
+                Position the person seated confidently behind an executive
+                desk, facing the camera. Use a square composition suitable
+                for a conference photo frame. Keep the head, face, hair,
+                shoulders, and hands away from the image edges.
 
-                The office should be futuristic but believable, not science fiction.
+                Use realistic skin texture, natural facial features,
+                accurate anatomy, realistic reflections, controlled contrast,
+                and high-end corporate editorial photography.
+
+                The environment must remain believable, not science fiction.
 
                 Generate the portrait photograph only.
-                Do not add any text, person's name, job title, company name,
-                logo, watermark, border, conference frame, caption, or graphic.
 
-                The official conference frame will be applied separately.
+                Do not add any text, name, title, company name, logo,
+                watermark, border, conference frame, caption, or graphic.
+
+                The official 360 Woman Africa conference frame will be
+                composited separately by the backend.
                 """.formatted(
                 cleanPromptText(name),
                 age,
@@ -351,16 +477,9 @@ public class GenerationService {
         );
     }
 
-    private String cleanPromptText(String value) {
-        if (value == null) {
-            return "";
-        }
-
-        return value.replaceAll("[\\r\\n\\t]", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-    }
-
+    /**
+     * Composite the portrait with the official transparent PNG frame.
+     */
     private byte[] applyFrame(BufferedImage portrait)
             throws IOException {
 
@@ -373,18 +492,22 @@ public class GenerationService {
             );
         }
 
-        BufferedImage frame = ImageIO.read(frameResource.getInputStream());
+        BufferedImage frame;
+
+        try (var inputStream = frameResource.getInputStream()) {
+            frame = ImageIO.read(inputStream);
+        }
 
         if (frame == null) {
             throw new IllegalStateException(
-                    "360Women.png is not a valid image."
+                    "360Women.png is not a valid PNG image."
             );
         }
 
         if (!frame.getColorModel().hasAlpha()) {
             throw new IllegalStateException(
-                    "360Women.png must have transparency in its central "
-                            + "photo window. Prepare a transparent PNG overlay first."
+                    "360Women.png must have an alpha channel and a "
+                            + "transparent central photo window."
             );
         }
 
@@ -404,16 +527,18 @@ public class GenerationService {
                     RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_BICUBIC
             );
+
             graphics.setRenderingHint(
                     RenderingHints.KEY_RENDERING,
                     RenderingHints.VALUE_RENDER_QUALITY
             );
+
             graphics.setRenderingHint(
                     RenderingHints.KEY_ANTIALIASING,
                     RenderingHints.VALUE_ANTIALIAS_ON
             );
 
-            // Scale portrait proportionally to cover the canvas.
+            // Scale proportionally to cover the entire canvas.
             double scale = Math.max(
                     (double) outputWidth / portrait.getWidth(),
                     (double) outputHeight / portrait.getHeight()
@@ -422,6 +547,7 @@ public class GenerationService {
             int scaledWidth = (int) Math.round(
                     portrait.getWidth() * scale
             );
+
             int scaledHeight = (int) Math.round(
                     portrait.getHeight() * scale
             );
@@ -430,6 +556,7 @@ public class GenerationService {
             int y = (outputHeight - scaledHeight) / 2;
 
             graphics.setComposite(AlphaComposite.Src);
+
             graphics.drawImage(
                     portrait,
                     x,
@@ -439,7 +566,7 @@ public class GenerationService {
                     null
             );
 
-            // Draw the official frame over the portrait.
+            // Preserve the original frame artwork by drawing it on top.
             graphics.setComposite(AlphaComposite.SrcOver);
             graphics.drawImage(frame, 0, 0, null);
 
@@ -450,8 +577,52 @@ public class GenerationService {
         ByteArrayOutputStream outputStream =
                 new ByteArrayOutputStream();
 
-        ImageIO.write(output, "png", outputStream);
+        boolean pngWritten = ImageIO.write(
+                output,
+                "png",
+                outputStream
+        );
+
+        if (!pngWritten) {
+            throw new IOException(
+                    "Could not encode the final PNG image."
+            );
+        }
 
         return outputStream.toByteArray();
+    }
+
+    private long elapsedSeconds(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000_000L;
+    }
+
+    private String cleanPromptText(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value.replaceAll("[\\r\\n\\t]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    /**
+     * Avoid printing an entire API error response into the logs.
+     */
+    private String sanitizeError(String error) {
+        if (error == null || error.isBlank()) {
+            return "No response body";
+        }
+
+        String cleaned = error
+                .replaceAll(
+                        "(?i)(sk-[A-Za-z0-9_-]{10,})",
+                        "[REDACTED]"
+                )
+                .replaceAll("[\\r\\n\\t]", " ");
+
+        return cleaned.length() > 1000
+                ? cleaned.substring(0, 1000)
+                : cleaned;
     }
 }
