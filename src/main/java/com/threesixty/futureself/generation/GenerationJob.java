@@ -14,16 +14,10 @@ public class GenerationJob {
 
     private final Instant createdAt = Instant.now();
 
-    /**
-     * Creates a generation job with a new unique ID.
-     */
     public GenerationJob() {
         this.id = UUID.randomUUID().toString();
     }
 
-    /**
-     * Creates a generation job using the supplied ID.
-     */
     public GenerationJob(String id) {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException(
@@ -55,7 +49,7 @@ public class GenerationJob {
     }
 
     /**
-     * Marks the job as processing.
+     * Marks the generation as processing.
      */
     public void processing() {
         this.image = null;
@@ -64,7 +58,8 @@ public class GenerationJob {
     }
 
     /**
-     * Stores the final generated image, including the frame.
+     * Stores the completed AI-generated portrait.
+     * The image may include an AI-generated conference frame.
      */
     public void complete(byte[] image) {
         if (image == null || image.length == 0) {
@@ -78,7 +73,7 @@ public class GenerationJob {
     }
 
     /**
-     * Marks the job as failed.
+     * Marks the generation as failed.
      */
     public void fail(String message) {
         this.image = null;
@@ -89,7 +84,7 @@ public class GenerationJob {
     }
 
     /**
-     * Marks the job as deleted and clears its image.
+     * Deletes the generated image from this job.
      */
     public void delete() {
         this.image = null;

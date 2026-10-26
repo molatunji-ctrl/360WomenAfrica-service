@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -16,13 +15,8 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
-import java.awt.AlphaComposite;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,7 +26,8 @@ import java.util.concurrent.Executors;
 @Service
 public class GenerationService {
 
-    private static final long MAX_IMAGE_SIZE = 10L * 1024L * 1024L;
+    private static final long MAX_IMAGE_SIZE =
+            10L * 1024L * 1024L;
 
     private final String apiKey;
     private final String model;
@@ -64,7 +59,7 @@ public class GenerationService {
     }
 
     /**
-     * Validates the user's request and starts portrait generation.
+     * Validates the request and starts portrait generation.
      */
     public GenerationJob create(
             MultipartFile image,
@@ -133,7 +128,6 @@ public class GenerationService {
         try {
             uploadedImage = image.getBytes();
 
-            // Check that the uploaded file can actually be decoded.
             BufferedImage decoded = ImageIO.read(
                     new ByteArrayInputStream(uploadedImage)
             );
@@ -143,7 +137,7 @@ public class GenerationService {
                         "The uploaded file is not a readable image."
                 );
             }
-        } catch (IOException e) {
+        } catch (java.io.IOException e) {
             throw new IllegalArgumentException(
                     "Unable to read the uploaded image."
             );
@@ -154,17 +148,13 @@ public class GenerationService {
 
         jobs.put(id, job);
 
-        String safeName = name.trim();
-        String safeOccupation = occupation.trim();
-
         executor.submit(() -> runGeneration(
                 job,
                 uploadedImage,
-                contentType,
                 filename,
-                safeName,
+                name.trim(),
                 age,
-                safeOccupation
+                occupation.trim()
         ));
 
         return job;
@@ -186,7 +176,7 @@ public class GenerationService {
     }
 
     /**
-     * Deletes a generation job and its generated image.
+     * Deletes a generation job.
      */
     public void delete(String id) {
         GenerationJob job = jobs.remove(id);
@@ -201,12 +191,12 @@ public class GenerationService {
     }
 
     /**
-     * Calls OpenAI, composites the frame, and completes the job.
+     * Generates the complete future-self portrait.
+     * No separate frame image is loaded or composited.
      */
     private void runGeneration(
             GenerationJob job,
             byte[] uploadedImage,
-            String contentType,
             String filename,
             String name,
             Integer age,
@@ -265,14 +255,24 @@ public class GenerationService {
                     base64Node.asText()
             );
 
-            // Composite the generated portrait with the frame.
-            byte[] finalImage = applyFrame(generatedImage);
+            // Validate the returned image before completing the job.
+            BufferedImage decodedImage = ImageIO.read(
+                    new ByteArrayInputStream(generatedImage)
+            );
 
-            // Store the COMBINED image, not the original portrait.
-            job.complete(finalImage);
+            if (decodedImage == null) {
+                throw new IllegalStateException(
+                        "The generated image could not be decoded."
+                );
+            }
+
+            // Save the complete AI-generated image directly.
+            job.complete(generatedImage);
 
         } catch (RestClientResponseException e) {
-            String error = sanitizeError(e.getResponseBodyAsString());
+            String error = sanitizeError(
+                    e.getResponseBodyAsString()
+            );
 
             System.err.println(
                     "OpenAI image generation failed. HTTP "
@@ -296,7 +296,7 @@ public class GenerationService {
     }
 
     /**
-     * Instructions for the future-self portrait.
+     * Prompt for generating the portrait and conference frame together.
      */
     private String buildPrompt(
             String name,
@@ -304,39 +304,59 @@ public class GenerationService {
             String occupation
     ) {
         return """
-                Create a photorealistic, inspiring future-self portrait
-                using the uploaded photograph as the identity reference.
+                Create a premium, photorealistic AI Future Self
+                portrait for the 360 Woman Africa Conference 2026.
 
-                The person's name is %s.
-                Their current age is %d.
-                Their occupation or ambition is %s.
+                PERSON DETAILS:
+                Name: %s
+                Current age: %d
+                Occupation or ambition: %s
 
-                Show a believable, confident, successful future version
-                of the same person approximately ten years into the future.
+                IDENTITY:
+                Use the uploaded photograph as the person's identity
+                reference. Preserve recognisable facial features,
+                skin tone, ethnicity, and distinctive appearance.
+                The result must remain recognisably the same person.
 
-                Preserve their recognisable facial identity, skin tone,
-                ethnicity, and distinctive facial features. The person
-                must remain recognisably the same individual.
+                FUTURE SELF:
+                Show a believable version of the person approximately
+                ten years into the future. Present her as confident,
+                accomplished, ambitious, empowered, and professionally
+                successful. Reflect her occupation through elegant
+                clothing and appropriate professional styling.
 
-                Reflect their occupation through tasteful clothing,
-                styling, and subtle professional context where appropriate.
+                COMPOSITION:
+                Generate the portrait and its conference frame together
+                as ONE complete, finished image.
 
-                Use flattering professional portrait lighting, realistic
-                skin texture, natural anatomy, and a polished editorial
-                photography style.
+                Create a premium conference portrait design featuring
+                an elegant purple and gold colour palette, refined
+                decorative borders, tasteful African-inspired geometric
+                accents, balanced spacing, and professional lighting.
 
-                Frame the person from the chest or waist up, facing the
-                camera, with their face clearly visible and positioned
-                near the centre of the image.
+                Keep the woman's face clearly visible and near the
+                centre. Make the frame symmetrical, polished, and
+                visually balanced. Do not let decorations cover her face.
 
-                Compose the image as a square portrait suitable for
-                placement behind a separate conference photo frame.
+                BRANDING:
+                The event is called 360 Woman Africa Conference 2026.
+                Leave a clean, uncluttered area suitable for conference
+                branding. Avoid inventing logos, sponsor names, or
+                additional event information.
 
-                Do not create a photo frame, border, logo, watermark,
-                lettering, captions, or decorative overlay. The frame
-                will be added separately by the application.
+                QUALITY:
+                Photorealistic skin texture, natural anatomy, realistic
+                hands, premium editorial photography, sophisticated
+                colour grading, sharp facial details, and professional
+                art direction.
 
-                Do not replace the person with a different individual.
+                Avoid clutter, distorted borders, extra people,
+                malformed facial features, watermarks, and gibberish text.
+
+                The final result must be a single image containing both
+                the woman and the designed conference frame. Do not
+                output a separate frame, a separate portrait, or a
+                transparent overlay.
                 """.formatted(
                 cleanPromptText(name),
                 age,
@@ -345,140 +365,7 @@ public class GenerationService {
     }
 
     /**
-     * Combines the generated portrait with the transparent PNG frame.
-     *
-     * IMPORTANT:
-     * The frame must have a genuinely transparent photo opening.
-     */
-    private byte[] applyFrame(byte[] generatedImage) throws IOException {
-
-        // Load the AI-generated portrait.
-        BufferedImage portrait = ImageIO.read(
-                new ByteArrayInputStream(generatedImage)
-        );
-
-        if (portrait == null) {
-            throw new IOException(
-                    "The generated portrait could not be decoded."
-            );
-        }
-
-        // Load the frame from src/main/resources.
-        ClassPathResource frameResource =
-                new ClassPathResource("FILETER 360 WOMAN.png");
-
-        if (!frameResource.exists()) {
-            throw new IOException(
-                    "Frame not found: FILETER 360 WOMAN.png. "
-                            + "Place it in src/main/resources."
-            );
-        }
-
-        BufferedImage frame;
-
-        try (var inputStream = frameResource.getInputStream()) {
-            frame = ImageIO.read(inputStream);
-        }
-
-        if (frame == null) {
-            throw new IOException(
-                    "The frame is not a readable PNG image."
-            );
-        }
-
-        int canvasWidth = frame.getWidth();
-        int canvasHeight = frame.getHeight();
-
-        /*
-         * Scale the portrait to COVER the entire frame canvas.
-         * The image keeps its aspect ratio and is centre-cropped.
-         */
-        double scale = Math.max(
-                (double) canvasWidth / portrait.getWidth(),
-                (double) canvasHeight / portrait.getHeight()
-        );
-
-        int scaledWidth = (int) Math.ceil(
-                portrait.getWidth() * scale
-        );
-
-        int scaledHeight = (int) Math.ceil(
-                portrait.getHeight() * scale
-        );
-
-        BufferedImage output = new BufferedImage(
-                canvasWidth,
-                canvasHeight,
-                BufferedImage.TYPE_INT_ARGB
-        );
-
-        Graphics2D graphics = output.createGraphics();
-
-        try {
-            graphics.setComposite(AlphaComposite.Src);
-            graphics.setRenderingHint(
-                    RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BICUBIC
-            );
-            graphics.setRenderingHint(
-                    RenderingHints.KEY_RENDERING,
-                    RenderingHints.VALUE_RENDER_QUALITY
-            );
-            graphics.setRenderingHint(
-                    RenderingHints.KEY_ANTIALIASING,
-                    RenderingHints.VALUE_ANTIALIAS_ON
-            );
-
-            // STEP 1: Draw the generated portrait FIRST.
-            int x = (canvasWidth - scaledWidth) / 2;
-            int y = (canvasHeight - scaledHeight) / 2;
-
-            graphics.drawImage(
-                    portrait,
-                    x,
-                    y,
-                    scaledWidth,
-                    scaledHeight,
-                    null
-            );
-
-            // STEP 2: Draw the transparent frame ON TOP.
-            graphics.setComposite(AlphaComposite.SrcOver);
-
-            graphics.drawImage(
-                    frame,
-                    0,
-                    0,
-                    canvasWidth,
-                    canvasHeight,
-                    null
-            );
-
-        } finally {
-            graphics.dispose();
-        }
-
-        // Export the combined result as PNG to preserve transparency.
-        ByteArrayOutputStream outputStream =
-                new ByteArrayOutputStream();
-
-        boolean written = ImageIO.write(
-                output,
-                "png",
-                outputStream
-        );
-
-        if (!written) {
-            throw new IOException(
-                    "Could not encode the final image as PNG."
-            );
-        }
-
-        return outputStream.toByteArray();
-    }
-
-    /**
-     * Determines a filename for the uploaded image.
+     * Determines a safe filename for the uploaded image.
      */
     private String getFilename(MultipartFile image) {
         String contentType = image.getContentType();
@@ -524,7 +411,7 @@ public class GenerationService {
     }
 
     /**
-     * Removes newlines and surrounding whitespace from prompt values.
+     * Cleans prompt values before inserting them into the prompt.
      */
     private String cleanPromptText(String value) {
         if (value == null) {
