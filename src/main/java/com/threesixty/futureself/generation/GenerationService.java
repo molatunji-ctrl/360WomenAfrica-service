@@ -1,4 +1,3 @@
-
 package com.threesixty.futureself.generation;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,14 +16,9 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URL;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Locale;
@@ -50,13 +44,13 @@ public class GenerationService {
             new ConcurrentHashMap<>();
 
     private final String model;
-    private final String frameUrl;
+    private final String quality;
 
     public GenerationService(
             @Value("${app.openai.api-key:}") String apiKey,
             @Value("${app.openai.model:gpt-image-1.5}") String model,
+            @Value("${app.openai.quality:low}") String quality,
             @Value("${app.openai.timeout-seconds:240}") int timeoutSeconds,
-            @Value("${app.frame.url:}") String frameUrl,
             ObjectMapper objectMapper
     ) {
         if (apiKey == null || apiKey.isBlank()) {
@@ -72,7 +66,7 @@ public class GenerationService {
         }
 
         this.model = model;
-        this.frameUrl = frameUrl;
+        this.quality = quality;
         this.objectMapper = objectMapper;
 
         SimpleClientHttpRequestFactory requestFactory =
@@ -89,7 +83,7 @@ public class GenerationService {
                 )
                 .build();
 
-        this.executor = Executors.newFixedThreadPool(2);
+        this.executor = Executors.newFixedThreadPool(6);
 
         System.out.println(
                 "[FutureSelf] GenerationService initialized."
@@ -304,11 +298,7 @@ public class GenerationService {
                             + id + ", elapsed=" + elapsedSeconds(start) + "s"
             );
 
-            System.out.println(
-                    "[FutureSelf] Applying official frame: " + id
-            );
-
-            byte[] finalImage = applyFrame(portrait);
+            byte[] finalImage = portrait;
 
             if (!"DELETED".equals(job.getStatus())) {
                 job.complete(finalImage);
@@ -368,7 +358,7 @@ public class GenerationService {
         body.add("model", model);
         body.add("prompt", prompt);
         body.add("size", "1024x1024");
-        body.add("quality", "medium");
+        body.add("quality", quality);
         body.add("image", imageResource);
 
         JsonNode response = openAiClient.post()
@@ -481,127 +471,6 @@ public class GenerationService {
                 age,
                 career
         );
-    }
-
-    /**
-     * Loads the frame from external HTTPS storage.
-     *
-     * IMPORTANT:
-     * This implementation assumes the frame is a full-canvas PNG with
-     * a transparent central photo window. If it is not, use a configured
-     * photo-window mask and coordinates instead.
-     */
-    private byte[] applyFrame(byte[] portraitBytes) throws IOException {
-        if (frameUrl == null || frameUrl.isBlank()) {
-            throw new IllegalStateException(
-                    "APP_FRAME_URL is not configured."
-            );
-        }
-
-        URI uri = URI.create(frameUrl);
-
-        if (!"https".equalsIgnoreCase(uri.getScheme())
-                || uri.getHost() == null) {
-            throw new IllegalStateException(
-                    "The official frame URL must use HTTPS."
-            );
-        }
-
-        BufferedImage portrait = ImageIO.read(
-                new ByteArrayInputStream(portraitBytes)
-        );
-
-        if (portrait == null) {
-            throw new IllegalStateException(
-                    "The generated portrait is invalid."
-            );
-        }
-
-        BufferedImage frame;
-
-        try (var input = uri.toURL().openStream()) {
-            frame = ImageIO.read(input);
-        }
-
-        if (frame == null) {
-            throw new IllegalStateException(
-                    "The official frame could not be loaded as an image."
-            );
-        }
-
-        if (!frame.getColorModel().hasAlpha()) {
-            throw new IllegalStateException(
-                    "The official frame has no alpha channel. "
-                            + "Provide a frame with a transparent photo window "
-                            + "or implement a photo-window mask."
-            );
-        }
-
-        int width = frame.getWidth();
-        int height = frame.getHeight();
-
-        BufferedImage canvas = new BufferedImage(
-                width,
-                height,
-                BufferedImage.TYPE_INT_ARGB
-        );
-
-        Graphics2D graphics = canvas.createGraphics();
-
-        try {
-            graphics.setRenderingHint(
-                    RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BICUBIC
-            );
-
-            graphics.setRenderingHint(
-                    RenderingHints.KEY_RENDERING,
-                    RenderingHints.VALUE_RENDER_QUALITY
-            );
-
-            // Cover the full canvas. This assumes the frame's transparent
-            // central photo area is positioned correctly within the canvas.
-            double scale = Math.max(
-                    (double) width / portrait.getWidth(),
-                    (double) height / portrait.getHeight()
-            );
-
-            int scaledWidth = (int) Math.ceil(
-                    portrait.getWidth() * scale
-            );
-
-            int scaledHeight = (int) Math.ceil(
-                    portrait.getHeight() * scale
-            );
-
-            int x = (width - scaledWidth) / 2;
-            int y = (height - scaledHeight) / 2;
-
-            graphics.drawImage(
-                    portrait,
-                    x,
-                    y,
-                    scaledWidth,
-                    scaledHeight,
-                    null
-            );
-
-            // Transparent pixels in the frame reveal the portrait.
-            graphics.drawImage(frame, 0, 0, null);
-
-        } finally {
-            graphics.dispose();
-        }
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        if (!ImageIO.write(canvas, "png", output)) {
-            throw new IllegalStateException(
-                    "Could not export the final portrait as PNG."
-            );
-        }
-
-        return output.toByteArray();
     }
 
     private static String safeText(String value, int maxLength) {
