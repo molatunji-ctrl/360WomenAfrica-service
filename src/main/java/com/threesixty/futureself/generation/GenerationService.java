@@ -16,6 +16,9 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.io.ByteArrayOutputStream;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -44,6 +47,7 @@ public class GenerationService {
             new ConcurrentHashMap<>();
 
     private final String model;
+    private final BufferedImage frame;
     private final String quality;
 
     public GenerationService(
@@ -66,6 +70,16 @@ public class GenerationService {
         }
 
         this.model = model;
+
+        // Frame is bundled in src/main/resources/frame.png (real transparent window).
+        try (var in = GenerationService.class.getResourceAsStream("/frame.png")) {
+            if (in == null) {
+                throw new IllegalStateException("frame.png is missing from resources.");
+            }
+            this.frame = ImageIO.read(in);
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not load frame.png", e);
+        }
         this.quality = quality;
         this.objectMapper = objectMapper;
 
@@ -298,7 +312,7 @@ public class GenerationService {
                             + id + ", elapsed=" + elapsedSeconds(start) + "s"
             );
 
-            byte[] finalImage = portrait;
+            byte[] finalImage = applyFrame(portrait);
 
             if (!"DELETED".equals(job.getStatus())) {
                 job.complete(finalImage);
@@ -357,7 +371,7 @@ public class GenerationService {
 
         body.add("model", model);
         body.add("prompt", prompt);
-        body.add("size", "1024x1024");
+        body.add("size", "1024x1536");
         body.add("quality", quality);
         body.add("image", imageResource);
 
@@ -445,6 +459,7 @@ public class GenerationService {
             Keep the head, face, shoulders, and important body features
             within the image. The office and desk should remain visible.
             Use natural anatomy and realistic hands.
+            Vertical portrait orientation (2:3).
 
             LIGHTING AND STYLE:
             Photorealistic luxury corporate magazine photography,
@@ -471,6 +486,50 @@ public class GenerationService {
                 age,
                 career
         );
+    }
+
+    // Transparent photo window inside frame.png (pixels).
+    private static final int WIN_X = 80;
+    private static final int WIN_Y = 216;
+    private static final int WIN_W = 862;
+    private static final int WIN_H = 1029;
+
+    private byte[] applyFrame(byte[] portraitBytes) throws IOException {
+        BufferedImage portrait = ImageIO.read(new ByteArrayInputStream(portraitBytes));
+        if (portrait == null) {
+            throw new IllegalStateException("The generated portrait is invalid.");
+        }
+
+        BufferedImage canvas = new BufferedImage(
+                frame.getWidth(), frame.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = canvas.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING,
+                    RenderingHints.VALUE_RENDER_QUALITY);
+
+            // Cover the photo window, centered, clipped to it.
+            double scale = Math.max((double) WIN_W / portrait.getWidth(),
+                    (double) WIN_H / portrait.getHeight());
+            int sw = (int) Math.ceil(portrait.getWidth() * scale);
+            int sh = (int) Math.ceil(portrait.getHeight() * scale);
+            int x = WIN_X + (WIN_W - sw) / 2;
+            int y = WIN_Y + (WIN_H - sh) / 2;
+
+            g.setClip(WIN_X, WIN_Y, WIN_W, WIN_H);
+            g.drawImage(portrait, x, y, sw, sh, null);
+            g.setClip(null);
+            g.drawImage(frame, 0, 0, null);
+        } finally {
+            g.dispose();
+        }
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        if (!ImageIO.write(canvas, "png", out)) {
+            throw new IllegalStateException("Could not export the final portrait as PNG.");
+        }
+        return out.toByteArray();
     }
 
     private static String safeText(String value, int maxLength) {
