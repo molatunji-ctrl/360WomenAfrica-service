@@ -1,20 +1,15 @@
-
 package com.threesixty.futureself.generation;
 
 import java.time.Instant;
-import java.util.UUID;
 
 public class GenerationJob {
 
     private final String id;
+    private final Instant createdAt;
+
     private volatile String status = "QUEUED";
     private volatile String message = "Your request is queued.";
     private volatile byte[] image;
-    private final Instant createdAt = Instant.now();
-
-    public GenerationJob() {
-        this.id = UUID.randomUUID().toString();
-    }
 
     public GenerationJob(String id) {
         if (id == null || id.isBlank()) {
@@ -22,11 +17,17 @@ public class GenerationJob {
                     "Generation ID cannot be empty."
             );
         }
+
         this.id = id;
+        this.createdAt = Instant.now();
     }
 
     public String getId() {
         return id;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 
     public String getStatus() {
@@ -37,37 +38,45 @@ public class GenerationJob {
         return message;
     }
 
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
     public byte[] getImage() {
         return image;
     }
 
     public synchronized void processing() {
+        if ("DELETED".equals(status)) {
+            return;
+        }
+
         image = null;
         status = "PROCESSING";
         message = "Creating your future-self portrait.";
     }
 
-    public synchronized void complete(byte[] image) {
-        if (image == null || image.length == 0) {
-            fail("The generated image is empty.");
+    public synchronized void complete(byte[] generatedImage) {
+        if ("DELETED".equals(status)) {
             return;
         }
 
-        this.image = image;
+        if (generatedImage == null || generatedImage.length == 0) {
+            fail("The generated portrait was empty. Please try again.");
+            return;
+        }
+
+        image = generatedImage;
         status = "COMPLETED";
         message = "Your portrait is ready.";
     }
 
-    public synchronized void fail(String message) {
+    public synchronized void fail(String failureMessage) {
+        if ("DELETED".equals(status)) {
+            return;
+        }
+
         image = null;
         status = "FAILED";
-        this.message = (message == null || message.isBlank())
-                ? "Portrait generation failed. Please try again."
-                : message;
+        message = failureMessage == null || failureMessage.isBlank()
+                ? "We could not generate your portrait. Please try again."
+                : failureMessage;
     }
 
     public synchronized void delete() {
