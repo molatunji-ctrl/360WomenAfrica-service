@@ -7,11 +7,9 @@ import java.util.UUID;
 public class GenerationJob {
 
     private final String id;
-
     private volatile String status = "QUEUED";
     private volatile String message = "Your request is queued.";
     private volatile byte[] image;
-
     private final Instant createdAt = Instant.now();
 
     public GenerationJob() {
@@ -24,7 +22,6 @@ public class GenerationJob {
                     "Generation ID cannot be empty."
             );
         }
-
         this.id = id;
     }
 
@@ -48,47 +45,34 @@ public class GenerationJob {
         return image;
     }
 
-    /**
-     * Marks the generation as processing.
-     */
-    public void processing() {
-        this.image = null;
-        this.status = "PROCESSING";
-        this.message = "Creating your future-self portrait.";
+    public synchronized void processing() {
+        image = null;
+        status = "PROCESSING";
+        message = "Creating your future-self portrait.";
     }
 
-    /**
-     * Stores the completed AI-generated portrait.
-     * The image may include an AI-generated conference frame.
-     */
-    public void complete(byte[] image) {
+    public synchronized void complete(byte[] image) {
         if (image == null || image.length == 0) {
             fail("The generated image is empty.");
             return;
         }
 
         this.image = image;
-        this.status = "COMPLETED";
-        this.message = "Your portrait is ready.";
+        status = "COMPLETED";
+        message = "Your portrait is ready.";
     }
 
-    /**
-     * Marks the generation as failed.
-     */
-    public void fail(String message) {
-        this.image = null;
-        this.status = "FAILED";
+    public synchronized void fail(String message) {
+        image = null;
+        status = "FAILED";
         this.message = (message == null || message.isBlank())
                 ? "Portrait generation failed. Please try again."
                 : message;
     }
 
-    /**
-     * Deletes the generated image from this job.
-     */
-    public void delete() {
-        this.image = null;
-        this.status = "DELETED";
-        this.message = "This generation has been deleted.";
+    public synchronized void delete() {
+        image = null;
+        status = "DELETED";
+        message = "This generation has been deleted.";
     }
 }
