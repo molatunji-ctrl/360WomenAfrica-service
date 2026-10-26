@@ -1,3 +1,4 @@
+
 package com.threesixty.futureself.generation;
 
 import java.time.Instant;

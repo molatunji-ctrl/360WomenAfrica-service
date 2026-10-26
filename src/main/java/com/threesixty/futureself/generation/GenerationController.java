@@ -1,56 +1,59 @@
+
 package com.threesixty.futureself.generation;
 
-import java.util.Map;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api/v1/generations")
 public class GenerationController {
-    private final GenerationService service;
-    public GenerationController(GenerationService service) { this.service = service; }
 
-    @GetMapping("/health")
-    public Map<String, String> health() { return Map.of("status", "ok", "service", "360-future-self"); }
+    private final GenerationService generationService;
 
-    @PostMapping(value = "/generations", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> create(
-            @RequestPart("image") MultipartFile image,
+    public GenerationController(GenerationService generationService) {
+        this.generationService = generationService;
+    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<GenerationJob> create(
+            @RequestParam("image") MultipartFile image,
             @RequestParam("name") String name,
-            @RequestParam("age") int age,
+            @RequestParam("age") String age,
             @RequestParam("occupation") String occupation,
-            @RequestParam("consent") boolean consent) {
-        GenerationJob job = service.create(image, name, age, occupation, consent);
-        return ResponseEntity.accepted().body(Map.of(
-                "id", job.getId(), "status", job.getStatus(), "message", job.getMessage()));
+            @RequestParam("consent") String consent) {
+
+        GenerationJob job = generationService.create(
+                image, name, age, occupation, consent
+        );
+
+        return ResponseEntity.accepted().body(job);
     }
 
-    @GetMapping("/generations/{id}")
-    public ResponseEntity<?> status(@PathVariable String id) {
-        GenerationJob job = service.find(id);
-        if (job == null) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(Map.of("id", job.getId(), "status", job.getStatus(), "message", job.getMessage()));
+    @GetMapping("/{id}")
+    public ResponseEntity<GenerationJob> getGeneration(
+            @PathVariable("id") String id) {
+
+        return ResponseEntity.ok(generationService.find(id));
     }
 
-    @GetMapping("/generations/{id}/image")
-    public ResponseEntity<byte[]> image(@PathVariable String id) {
-        GenerationJob job = service.find(id);
-        if (job == null) return ResponseEntity.notFound().build();
-        if (!"COMPLETED".equals(job.getStatus()) || job.getImage() == null) return ResponseEntity.status(409).build();
+    @GetMapping(value = "/{id}/image", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> getImage(
+            @PathVariable("id") String id) {
+
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_PNG)
                 .cacheControl(CacheControl.noStore())
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"future-self.png\"")
-                .body(job.getImage());
+                .body(generationService.getImage(id));
     }
 
-    @DeleteMapping("/generations/{id}")
-    public ResponseEntity<Void> delete(@PathVariable String id) {
-        service.delete(id);
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteGeneration(
+            @PathVariable("id") String id) {
+
+        generationService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }
