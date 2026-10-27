@@ -16,9 +16,6 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.RoundRectangle2D;
@@ -316,8 +313,7 @@ public class GenerationService {
                             + id + ", elapsed=" + elapsedSeconds(start) + "s"
             );
 
-            // Name and occupation are drawn onto the frame (no age).
-            byte[] finalImage = applyFrame(portrait, name, occupation);
+            byte[] finalImage = applyFrame(portrait);
 
             if (!"DELETED".equals(job.getStatus())) {
                 job.complete(finalImage);
@@ -445,12 +441,12 @@ public class GenerationService {
                   real, authentic workplace of a top-level %s: the right
                   location, equipment, tools, props, and details that
                   someone in this field would genuinely use. A viewer
-                  should recognise the profession at a glance without any
-                  text. Make it look premium, modern and successful, about
-                  ten years in the future, with subtle African design
-                  influences and warm lighting. Do not default to a generic
-                  corporate office unless that is truly the workplace of
-                  this profession.
+                  should recognise the profession at a glance. Make it
+                  look premium, modern and successful, about ten years in
+                  the future, with subtle African design influences and
+                  warm lighting. Do not default to a generic corporate
+                  office unless that is truly the workplace of this
+                  profession.
                   """.formatted(occupation, occupation)
                 : """
                   A luxurious, believable executive office about ten years
@@ -472,6 +468,24 @@ public class GenerationService {
                   """.formatted(occupation)
                 : "Premium tailored executive clothing, refined accessories, "
                 + "elegant styling, realistic materials.";
+
+        String title = hasOccupation ? occupation : "CEO";
+
+        // The person's details appear INSIDE the scene as a physical object.
+        String nameplateRule = """
+                Include ONE small, elegant engraved nameplate (a brass or
+                dark-wood desk plaque, or another believable object that
+                suits the profession, such as a refined office door or
+                wall plaque) placed naturally in the scene, fully visible
+                and in sharp focus, in the lower-middle of the image but
+                above the bottom 25 percent of the picture.
+                The plaque shows exactly two lines of text and nothing else:
+                Line 1: "%s"
+                Line 2: "%s"
+                Spell both lines exactly as written, letter for letter,
+                in clean, legible, classy lettering. Do not add a
+                number, age, date, slogan or any other text.
+                """.formatted(name, title);
 
         return """
             Create a photorealistic, premium editorial portrait of the
@@ -496,6 +510,9 @@ public class GenerationService {
             WARDROBE:
             %s
 
+            NAMEPLATE (the only text allowed in the image):
+            %s
+
             The result should communicate confidence, intelligence,
             achievement, authority in their field, and approachability.
 
@@ -506,8 +523,10 @@ public class GenerationService {
             clear background space above the head. Never crop or touch
             the top of the head, hair, or any headwear. Frame the person
             from about waist up, centred, with space on both sides.
-            Keep the full head, face, shoulders, hands and the
-            profession-related props and environment visible.
+            Keep the full head, face, shoulders, hands, the nameplate and
+            the profession-related props visible. Keep every important
+            element inside the top 75 percent of the image height, because
+            the bottom edge may be trimmed.
             Natural anatomy and realistic hands.
 
             LIGHTING AND STYLE:
@@ -517,10 +536,11 @@ public class GenerationService {
             on the background, premium international editorial quality.
 
             STRICT EXCLUSIONS:
-            No text, numbers, nameplate, logo, watermark, border, caption,
-            graphic overlay or frame. Do not invent readable text or make
-            the image science-fictional. Generate only the portrait and
-            its environment.
+            Apart from the nameplate, no text, numbers, logo, watermark,
+            border, caption, graphic overlay or frame. Never show the
+            person's age anywhere. Do not make the image
+            science-fictional. Generate only the portrait and its
+            environment.
 
             The final image should answer: "Where could this person be
             ten years from now?"
@@ -531,7 +551,8 @@ public class GenerationService {
                 career,
                 futureAge,
                 environmentRule,
-                wardrobeRule
+                wardrobeRule,
+                nameplateRule
         );
     }
 
@@ -541,12 +562,7 @@ public class GenerationService {
     private static final int WIN_W = 862;
     private static final int WIN_H = 1029;
 
-    // Space between the photo window and the caption text.
-    private static final int CAPTION_TOP_PADDING = 20;
-
-    private byte[] applyFrame(byte[] portraitBytes,
-                              String name,
-                              String occupation) throws IOException {
+    private byte[] applyFrame(byte[] portraitBytes) throws IOException {
         BufferedImage portrait = ImageIO.read(new ByteArrayInputStream(portraitBytes));
         if (portrait == null) {
             throw new IllegalStateException("The generated portrait is invalid.");
@@ -560,10 +576,6 @@ public class GenerationService {
                     RenderingHints.VALUE_INTERPOLATION_BICUBIC);
             g.setRenderingHint(RenderingHints.KEY_RENDERING,
                     RenderingHints.VALUE_RENDER_QUALITY);
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                    RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
             // Cover the photo window, centred horizontally and anchored to the
             // TOP so the headroom is kept (only the bottom gets cropped).
@@ -582,8 +594,6 @@ public class GenerationService {
                     WIN_X + 2, WIN_Y + 2, WIN_W - 4, WIN_H - 4, 24, 24));
             g.drawImage(portrait, x, y, sw, sh, null);
             g.setClip(null);
-
-            drawCaption(g, name, occupation);
         } finally {
             g.dispose();
         }
@@ -593,50 +603,6 @@ public class GenerationService {
             throw new IllegalStateException("Could not export the final portrait as PNG.");
         }
         return out.toByteArray();
-    }
-
-    /**
-     * Draws the person's name and occupation in the strip of the frame
-     * below the photo window. Age is intentionally not shown.
-     */
-    private void drawCaption(Graphics2D g, String name, String occupation) {
-        int areaTop = WIN_Y + WIN_H + CAPTION_TOP_PADDING;
-        int areaHeight = frame.getHeight() - areaTop - CAPTION_TOP_PADDING;
-        int maxWidth = WIN_W - 40;
-        int centerX = WIN_X + WIN_W / 2;
-
-        boolean hasJob = occupation != null && !occupation.isBlank();
-
-        String line1 = name.toUpperCase(Locale.ROOT);
-        String line2 = hasJob ? occupation : "Company Director & CEO";
-
-        Color gold = new Color(212, 175, 55);
-        Color white = Color.WHITE;
-
-        // Two lines stacked, vertically centred in the caption area.
-        int lineGap = areaHeight / 2;
-        int baseY = areaTop + lineGap / 2;
-
-        drawFitted(g, line1, Font.BOLD, 56, white, centerX, baseY, maxWidth);
-        drawFitted(g, line2, Font.PLAIN, 38, gold, centerX, baseY + lineGap, maxWidth);
-    }
-
-    /** Draws centred text, shrinking the font until it fits maxWidth. */
-    private void drawFitted(Graphics2D g, String text, int style, int startSize,
-                            Color color, int centerX, int baselineY, int maxWidth) {
-        int size = startSize;
-        Font font = new Font("SansSerif", style, size);
-        FontMetrics fm = g.getFontMetrics(font);
-
-        while (fm.stringWidth(text) > maxWidth && size > 14) {
-            size -= 2;
-            font = new Font("SansSerif", style, size);
-            fm = g.getFontMetrics(font);
-        }
-
-        g.setFont(font);
-        g.setColor(color);
-        g.drawString(text, centerX - fm.stringWidth(text) / 2, baselineY);
     }
 
     /**
