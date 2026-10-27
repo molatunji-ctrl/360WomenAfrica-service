@@ -420,71 +420,113 @@ public class GenerationService {
             String age,
             String occupation
     ) {
-        String career = occupation == null || occupation.isBlank()
-                ? "a highly successful company director and CEO"
-                : "a highly successful professional working as " + occupation;
+        boolean hasOccupation = occupation != null && !occupation.isBlank();
+
+        String futureAge;
+        try {
+            futureAge = String.valueOf(Integer.parseInt(age.trim()) + 10);
+        } catch (NumberFormatException e) {
+            futureAge = "ten years older than now";
+        }
+
+        String career = hasOccupation
+                ? "a highly accomplished, senior-level " + occupation
+                + " (a leader, owner or top expert in this field)"
+                : "a highly successful company director and CEO";
+
+        String environmentRule = hasOccupation
+                ? """
+                  Design the setting around the profession "%s". Show the
+                  real, authentic workplace of a top-level %s: the right
+                  location, equipment, tools, props, and details that
+                  someone in this field would genuinely use. A viewer
+                  should recognise the profession at a glance without any
+                  text. Make it look premium, modern and successful, about
+                  ten years in the future, with subtle African design
+                  influences and warm lighting. Do not default to a generic
+                  corporate office unless that is truly the workplace of
+                  this profession.
+                  """.formatted(occupation, occupation)
+                : """
+                  A luxurious, believable executive office about ten years
+                  in the future: floor-to-ceiling glass windows, an
+                  international city skyline, a premium executive desk,
+                  dark wood, glass, brushed metal, subtle African luxury
+                  design influences, warm architectural lighting.
+                  """;
+
+        String wardrobeRule = hasOccupation
+                ? """
+                  Dress the person in premium, tailored attire that fits
+                  the profession "%s" at senior level (for example a
+                  white coat for medicine, a tailored suit for law or
+                  finance, a refined work uniform or smart-casual
+                  professional wear for creative or technical fields).
+                  Pick whatever is most realistic and respected for this
+                  role. Elegant, natural styling, realistic fabrics.
+                  """.formatted(occupation)
+                : "Premium tailored executive clothing, refined accessories, "
+                + "elegant styling, realistic materials.";
 
         return """
-            Create a photorealistic, premium corporate editorial portrait
-            of the person in the supplied reference photograph, imagining
-            them approximately ten years in the future.
+            Create a photorealistic, premium editorial portrait of the
+            person in the supplied reference photograph, imagining them
+            about ten years in the future.
+
+            SUBJECT DETAILS:
+            Name: %s. Current age: %s. Portrayed age: about %s.
+            Profession in ten years: %s.
 
             IDENTITY:
             Use the uploaded photograph as the primary identity reference.
             Preserve the person's recognizable face, facial structure,
-            skin tone, ethnicity, eyes, nose, lips, jawline, and overall
-            likeness. Do not replace the person with a generic model.
-            Use subtle, believable age progression, not exaggerated aging.
+            skin tone, ethnicity, eyes, nose, lips, jawline, hairline and
+            overall likeness. Do not replace them with a generic model.
+            Apply subtle, believable age progression to about %s years old
+            (a few fine lines, mature confident look), never exaggerated.
 
-            FUTURE CAREER:
-            Portray the person as %s.
-            The result should communicate confidence, intelligence,
-            achievement, sophistication, leadership, and approachability.
+            PROFESSION AND ENVIRONMENT:
+            %s
 
             WARDROBE:
-            Premium tailored executive clothing appropriate for a successful
-            African business leader. Refined accessories, elegant styling,
-            natural proportions, and realistic materials.
+            %s
 
-            ENVIRONMENT:
-            A luxurious, believable executive office approximately ten years
-            in the future. Floor-to-ceiling glass windows, an international
-            city skyline, a premium executive desk, dark wood, glass,
-            brushed metal, subtle African luxury design influences, warm
-            architectural lighting, and restrained modern technology.
+            The result should communicate confidence, intelligence,
+            achievement, authority in their field, and approachability.
 
-            COMPOSITION:
-            A professional, camera-facing medium-wide executive portrait.
-            The person may be seated confidently behind the desk.
-            Keep the head, face, shoulders, and important body features
-            within the image. The office and desk should remain visible.
-            Use natural anatomy and realistic hands.
-            Vertical portrait orientation (2:3).
+            COMPOSITION AND HEADROOM (IMPORTANT):
+            Medium-wide, camera-facing portrait, vertical 2:3.
+            Leave generous empty headroom: the top of the head must sit
+            about 15 to 20 percent below the top edge of the image, with
+            clear background space above the head. Never crop or touch
+            the top of the head, hair, or any headwear. Frame the person
+            from about mid-thigh or waist up, centred, with space on both
+            sides. Keep the full head, face, shoulders, hands and the
+            profession-related props and environment visible.
+            Natural anatomy and realistic hands.
 
             LIGHTING AND STYLE:
-            Photorealistic luxury corporate magazine photography,
-            realistic skin texture, cinematic warm golden highlights,
-            balanced contrast, believable reflections, high detail,
-            natural facial features, and premium international editorial
-            quality.
+            Photorealistic luxury magazine photography, realistic skin
+            texture, cinematic warm golden highlights, balanced contrast,
+            believable reflections, high detail, shallow depth of field
+            on the background, premium international editorial quality.
 
             STRICT EXCLUSIONS:
-            Do not add text, a nameplate, a logo, a watermark, a border,
-            conference branding, captions, graphic overlays, or a frame.
-            Do not invent text or make the image science-fictional.
-            Generate only the portrait and office environment.
+            No text, nameplate, logo, watermark, border, caption, graphic
+            overlay or frame. Do not invent readable text or make the
+            image science-fictional. Generate only the portrait and its
+            environment.
 
-            The final image should communicate:
-            "Where could this person be ten years from now?"
-
-            Participant name for contextual reference: %s.
-            Current age supplied by participant: %s.
-            Future career description: %s.
+            The final image should answer: "Where could this person be
+            ten years from now?"
             """.formatted(
-                career,
                 name,
                 age,
-                career
+                futureAge,
+                career,
+                futureAge,
+                environmentRule,
+                wardrobeRule
         );
     }
 
@@ -509,13 +551,14 @@ public class GenerationService {
             g.setRenderingHint(RenderingHints.KEY_RENDERING,
                     RenderingHints.VALUE_RENDER_QUALITY);
 
-            // Cover the photo window, centered, clipped to it.
+            // Cover the photo window, centred horizontally and anchored to the
+            // TOP so the headroom is kept (only the bottom gets cropped).
             double scale = Math.max((double) WIN_W / portrait.getWidth(),
                     (double) WIN_H / portrait.getHeight());
             int sw = (int) Math.ceil(portrait.getWidth() * scale);
             int sh = (int) Math.ceil(portrait.getHeight() * scale);
             int x = WIN_X + (WIN_W - sw) / 2;
-            int y = WIN_Y + (WIN_H - sh) / 2;
+            int y = WIN_Y;
 
             // Draw the frame first, then the portrait on top, clipped to the
             // photo window. This works even if the frame file's window is not
@@ -536,12 +579,20 @@ public class GenerationService {
         return out.toByteArray();
     }
 
+    /**
+     * Trim, collapse whitespace, strip control characters (newlines etc.)
+     * and cap the length, so user input cannot inject extra prompt lines.
+     */
     private static String safeText(String value, int maxLength) {
         if (value == null) {
             return "";
         }
 
-        String cleaned = value.trim();
+        String cleaned = value
+                .replaceAll("\\p{Cntrl}", " ")
+                .replaceAll("\\s+", " ")
+                .replace("\"", "'")
+                .trim();
 
         return cleaned.length() <= maxLength
                 ? cleaned
