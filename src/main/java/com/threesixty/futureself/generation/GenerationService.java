@@ -16,8 +16,12 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.geom.RoundRectangle2D;
 import java.io.ByteArrayOutputStream;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -312,7 +316,8 @@ public class GenerationService {
                             + id + ", elapsed=" + elapsedSeconds(start) + "s"
             );
 
-            byte[] finalImage = applyFrame(portrait);
+            // Name and occupation are drawn onto the frame (no age).
+            byte[] finalImage = applyFrame(portrait, name, occupation);
 
             if (!"DELETED".equals(job.getStatus())) {
                 job.complete(finalImage);
@@ -500,8 +505,8 @@ public class GenerationService {
             about 15 to 20 percent below the top edge of the image, with
             clear background space above the head. Never crop or touch
             the top of the head, hair, or any headwear. Frame the person
-            from about mid-thigh or waist up, centred, with space on both
-            sides. Keep the full head, face, shoulders, hands and the
+            from about waist up, centred, with space on both sides.
+            Keep the full head, face, shoulders, hands and the
             profession-related props and environment visible.
             Natural anatomy and realistic hands.
 
@@ -512,10 +517,10 @@ public class GenerationService {
             on the background, premium international editorial quality.
 
             STRICT EXCLUSIONS:
-            No text, nameplate, logo, watermark, border, caption, graphic
-            overlay or frame. Do not invent readable text or make the
-            image science-fictional. Generate only the portrait and its
-            environment.
+            No text, numbers, nameplate, logo, watermark, border, caption,
+            graphic overlay or frame. Do not invent readable text or make
+            the image science-fictional. Generate only the portrait and
+            its environment.
 
             The final image should answer: "Where could this person be
             ten years from now?"
@@ -536,7 +541,12 @@ public class GenerationService {
     private static final int WIN_W = 862;
     private static final int WIN_H = 1029;
 
-    private byte[] applyFrame(byte[] portraitBytes) throws IOException {
+    // Space between the photo window and the caption text.
+    private static final int CAPTION_TOP_PADDING = 20;
+
+    private byte[] applyFrame(byte[] portraitBytes,
+                              String name,
+                              String occupation) throws IOException {
         BufferedImage portrait = ImageIO.read(new ByteArrayInputStream(portraitBytes));
         if (portrait == null) {
             throw new IllegalStateException("The generated portrait is invalid.");
@@ -550,6 +560,10 @@ public class GenerationService {
                     RenderingHints.VALUE_INTERPOLATION_BICUBIC);
             g.setRenderingHint(RenderingHints.KEY_RENDERING,
                     RenderingHints.VALUE_RENDER_QUALITY);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
             // Cover the photo window, centred horizontally and anchored to the
             // TOP so the headroom is kept (only the bottom gets cropped).
@@ -564,10 +578,12 @@ public class GenerationService {
             // photo window. This works even if the frame file's window is not
             // truly transparent (e.g. a checkerboard baked into the pixels).
             g.drawImage(frame, 0, 0, null);
-            g.setClip(new java.awt.geom.RoundRectangle2D.Double(
+            g.setClip(new RoundRectangle2D.Double(
                     WIN_X + 2, WIN_Y + 2, WIN_W - 4, WIN_H - 4, 24, 24));
             g.drawImage(portrait, x, y, sw, sh, null);
             g.setClip(null);
+
+            drawCaption(g, name, occupation);
         } finally {
             g.dispose();
         }
@@ -577,6 +593,50 @@ public class GenerationService {
             throw new IllegalStateException("Could not export the final portrait as PNG.");
         }
         return out.toByteArray();
+    }
+
+    /**
+     * Draws the person's name and occupation in the strip of the frame
+     * below the photo window. Age is intentionally not shown.
+     */
+    private void drawCaption(Graphics2D g, String name, String occupation) {
+        int areaTop = WIN_Y + WIN_H + CAPTION_TOP_PADDING;
+        int areaHeight = frame.getHeight() - areaTop - CAPTION_TOP_PADDING;
+        int maxWidth = WIN_W - 40;
+        int centerX = WIN_X + WIN_W / 2;
+
+        boolean hasJob = occupation != null && !occupation.isBlank();
+
+        String line1 = name.toUpperCase(Locale.ROOT);
+        String line2 = hasJob ? occupation : "Company Director & CEO";
+
+        Color gold = new Color(212, 175, 55);
+        Color white = Color.WHITE;
+
+        // Two lines stacked, vertically centred in the caption area.
+        int lineGap = areaHeight / 2;
+        int baseY = areaTop + lineGap / 2;
+
+        drawFitted(g, line1, Font.BOLD, 56, white, centerX, baseY, maxWidth);
+        drawFitted(g, line2, Font.PLAIN, 38, gold, centerX, baseY + lineGap, maxWidth);
+    }
+
+    /** Draws centred text, shrinking the font until it fits maxWidth. */
+    private void drawFitted(Graphics2D g, String text, int style, int startSize,
+                            Color color, int centerX, int baselineY, int maxWidth) {
+        int size = startSize;
+        Font font = new Font("SansSerif", style, size);
+        FontMetrics fm = g.getFontMetrics(font);
+
+        while (fm.stringWidth(text) > maxWidth && size > 14) {
+            size -= 2;
+            font = new Font("SansSerif", style, size);
+            fm = g.getFontMetrics(font);
+        }
+
+        g.setFont(font);
+        g.setColor(color);
+        g.drawString(text, centerX - fm.stringWidth(text) / 2, baselineY);
     }
 
     /**
