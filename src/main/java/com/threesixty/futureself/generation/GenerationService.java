@@ -16,12 +16,17 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.RoundRectangle2D;
-import java.io.ByteArrayOutputStream;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Base64;
@@ -40,6 +45,12 @@ public class GenerationService {
 
     private static final long MAX_UPLOAD_BYTES = 10L * 1024 * 1024;
 
+    // Transparent photo window inside frame.png (pixels).
+    private static final int WIN_X = 80;
+    private static final int WIN_Y = 216;
+    private static final int WIN_W = 862;
+    private static final int WIN_H = 1029;
+
     private final RestClient openAiClient;
     private final ObjectMapper objectMapper;
     private final ExecutorService executor;
@@ -54,7 +65,7 @@ public class GenerationService {
     public GenerationService(
             @Value("${app.openai.api-key:}") String apiKey,
             @Value("${app.openai.model:gpt-image-1.5}") String model,
-            @Value("${app.openai.quality:low}") String quality,
+            @Value("${app.openai.quality:medium}") String quality,
             @Value("${app.openai.timeout-seconds:240}") int timeoutSeconds,
             ObjectMapper objectMapper
     ) {
@@ -313,7 +324,11 @@ public class GenerationService {
                             + id + ", elapsed=" + elapsedSeconds(start) + "s"
             );
 
-            byte[] finalImage = applyFrame(portrait);
+            String title = (occupation == null || occupation.isBlank())
+                    ? "CEO"
+                    : occupation;
+
+            byte[] finalImage = applyFrame(portrait, name, title);
 
             if (!"DELETED".equals(job.getStatus())) {
                 job.complete(finalImage);
@@ -469,23 +484,14 @@ public class GenerationService {
                 : "Premium tailored executive clothing, refined accessories, "
                 + "elegant styling, realistic materials.";
 
-        String title = hasOccupation ? occupation : "CEO";
-
-        // The person's details appear INSIDE the scene as a physical object.
-        String nameplateRule = """
-                Include ONE small, elegant engraved nameplate (a brass or
-                dark-wood desk plaque, or another believable object that
-                suits the profession, such as a refined office door or
-                wall plaque) placed naturally in the scene, fully visible
-                and in sharp focus, in the lower-middle of the image but
-                above the bottom 25 percent of the picture.
-                The plaque shows exactly two lines of text and nothing else:
-                Line 1: "%s"
-                Line 2: "%s"
-                Spell both lines exactly as written, letter for letter,
-                in clean, legible, classy lettering. Do not add a
-                number, age, date, slogan or any other text.
-                """.formatted(name, title);
+        // The name and title are drawn by code afterwards (see drawNameplate),
+        // so the model must NOT render any text. It only keeps the foreground clear.
+        String textRule = """
+                Do NOT include any nameplate, sign, plaque, label or text
+                of any kind. Keep the lower 25 percent of the image a
+                clean, uncluttered desk surface or foreground with
+                nothing important on it.
+                """;
 
         return """
             Create a photorealistic, premium editorial portrait of the
@@ -510,7 +516,7 @@ public class GenerationService {
             WARDROBE:
             %s
 
-            NAMEPLATE (the only text allowed in the image):
+            TEXT:
             %s
 
             The result should communicate confidence, intelligence,
@@ -523,10 +529,10 @@ public class GenerationService {
             clear background space above the head. Never crop or touch
             the top of the head, hair, or any headwear. Frame the person
             from about waist up, centred, with space on both sides.
-            Keep the full head, face, shoulders, hands, the nameplate and
-            the profession-related props visible. Keep every important
-            element inside the top 75 percent of the image height, because
-            the bottom edge may be trimmed.
+            Keep the full head, face, shoulders, hands and the
+            profession-related props visible. Keep every important
+            element inside the top 70 percent of the image height, because
+            the bottom edge may be trimmed or covered.
             Natural anatomy and realistic hands.
 
             LIGHTING AND STYLE:
@@ -536,11 +542,10 @@ public class GenerationService {
             on the background, premium international editorial quality.
 
             STRICT EXCLUSIONS:
-            Apart from the nameplate, no text, numbers, logo, watermark,
-            border, caption, graphic overlay or frame. Never show the
-            person's age anywhere. Do not make the image
-            science-fictional. Generate only the portrait and its
-            environment.
+            No text, numbers, logo, watermark, border, caption, graphic
+            overlay or frame. Never show the person's age anywhere. Do
+            not make the image science-fictional. Generate only the
+            portrait and its environment.
 
             The final image should answer: "Where could this person be
             ten years from now?"
@@ -552,17 +557,11 @@ public class GenerationService {
                 futureAge,
                 environmentRule,
                 wardrobeRule,
-                nameplateRule
+                textRule
         );
     }
 
-    // Transparent photo window inside frame.png (pixels).
-    private static final int WIN_X = 80;
-    private static final int WIN_Y = 216;
-    private static final int WIN_W = 862;
-    private static final int WIN_H = 1029;
-
-    private byte[] applyFrame(byte[] portraitBytes) throws IOException {
+    private byte[] applyFrame(byte[] portraitBytes, String name, String title) throws IOException {
         BufferedImage portrait = ImageIO.read(new ByteArrayInputStream(portraitBytes));
         if (portrait == null) {
             throw new IllegalStateException("The generated portrait is invalid.");
@@ -594,6 +593,9 @@ public class GenerationService {
                     WIN_X + 2, WIN_Y + 2, WIN_W - 4, WIN_H - 4, 24, 24));
             g.drawImage(portrait, x, y, sw, sh, null);
             g.setClip(null);
+
+            // Crisp nameplate drawn by code, always inside the photo window.
+            drawNameplate(g, name, title);
         } finally {
             g.dispose();
         }
@@ -603,6 +605,70 @@ public class GenerationService {
             throw new IllegalStateException("Could not export the final portrait as PNG.");
         }
         return out.toByteArray();
+    }
+
+    /**
+     * Draws a dark-wood desk plaque with a brass border near the bottom of the
+     * photo window. Text is rendered by Java, so it is sharp, spelled exactly
+     * as entered, and never cropped.
+     */
+    private void drawNameplate(Graphics2D g, String name, String title) {
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
+                RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+
+        int plateW = (int) (WIN_W * 0.66);
+        int plateH = 130;
+        int px = WIN_X + (WIN_W - plateW) / 2;
+        int py = WIN_Y + WIN_H - plateH - 45;
+
+        // Soft shadow
+        g.setColor(new Color(0, 0, 0, 90));
+        g.fillRoundRect(px + 4, py + 9, plateW, plateH, 18, 18);
+
+        // Dark wood body
+        g.setPaint(new GradientPaint(
+                px, py, new Color(0x5A, 0x36, 0x1C),
+                px, py + plateH, new Color(0x2B, 0x19, 0x0C)));
+        g.fillRoundRect(px, py, plateW, plateH, 18, 18);
+
+        // Brass border
+        g.setPaint(new GradientPaint(
+                px, py, new Color(0xF0, 0xD0, 0x70),
+                px, py + plateH, new Color(0xB8, 0x8A, 0x2E)));
+        g.setStroke(new BasicStroke(4f));
+        g.drawRoundRect(px + 3, py + 3, plateW - 6, plateH - 6, 16, 16);
+
+        // Line 1: name, Line 2: title
+        int textW = plateW - 60;
+        int cx = px + plateW / 2;
+
+        g.setPaint(new Color(0xF5, 0xDE, 0x9A));
+        drawFitted(g, name, Font.BOLD, 46, cx, py + 60, textW);
+
+        g.setPaint(new Color(0xE0, 0xC0, 0x70));
+        drawFitted(g, title.toUpperCase(Locale.ROOT), Font.PLAIN, 28,
+                cx, py + 100, textW);
+    }
+
+    /** Draws centred text, shrinking the font until it fits maxWidth. */
+    private static void drawFitted(Graphics2D g, String text, int style,
+                                   int startSize, int cx, int baseline, int maxWidth) {
+        int size = startSize;
+        Font font = new Font(Font.SERIF, style, size);
+        FontMetrics fm = g.getFontMetrics(font);
+
+        while (fm.stringWidth(text) > maxWidth && size > 14) {
+            size -= 2;
+            font = new Font(Font.SERIF, style, size);
+            fm = g.getFontMetrics(font);
+        }
+
+        g.setFont(font);
+        g.drawString(text, cx - fm.stringWidth(text) / 2, baseline);
     }
 
     /**
