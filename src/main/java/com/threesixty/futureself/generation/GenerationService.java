@@ -420,70 +420,296 @@ public class GenerationService {
             String age,
             String occupation
     ) {
+        String participantName = name == null || name.isBlank()
+                ? "the participant"
+                : name.trim();
+
+        String participantAge = age == null || age.isBlank()
+                ? "not specified"
+                : age.trim();
+
         String career = occupation == null || occupation.isBlank()
-                ? "a highly successful company director and CEO"
-                : "a highly successful professional working as " + occupation;
+                ? "a successful professional pursuing a meaningful career"
+                : occupation.trim();
 
         return """
-            Create a photorealistic, premium corporate editorial portrait
-            of the person in the supplied reference photograph, imagining
-            them approximately ten years in the future.
+            Create an exceptionally detailed, photorealistic FUTURE SELF
+            portrait of the exact person in the supplied reference photograph,
+            imagining their life and professional achievements approximately
+            ten years in the future.
 
-            IDENTITY:
-            Use the uploaded photograph as the primary identity reference.
-            Preserve the person's recognizable face, facial structure,
-            skin tone, ethnicity, eyes, nose, lips, jawline, and overall
-            likeness. Do not replace the person with a generic model.
-            Use subtle, believable age progression, not exaggerated aging.
+            THE PRIMARY OBJECTIVE:
+            Create a believable, aspirational, personalized vision of who this
+            particular person could become. The final result must reflect the
+            participant's actual occupation and career aspirations, not a
+            generic corporate executive template.
 
-            FUTURE CAREER:
-            Portray the person as %s.
-            The result should communicate confidence, intelligence,
-            achievement, sophistication, leadership, and approachability.
+            1. IDENTITY AND FACIAL LIKENESS
 
-            WARDROBE:
-            Premium tailored executive clothing appropriate for a successful
-            African business leader. Refined accessories, elegant styling,
-            natural proportions, and realistic materials.
+            Use the uploaded photograph as the primary and authoritative
+            reference for the person's identity.
 
-            ENVIRONMENT:
-            A luxurious, believable executive office approximately ten years
-            in the future. Floor-to-ceiling glass windows, an international
-            city skyline, a premium executive desk, dark wood, glass,
-            brushed metal, subtle African luxury design influences, warm
-            architectural lighting, and restrained modern technology.
+            Preserve their recognizable facial structure, face shape, eyes,
+            nose, lips, jawline, skin tone, complexion, ethnicity and distinctive
+            facial characteristics.
 
-            COMPOSITION:
-            A professional, camera-facing medium-wide executive portrait.
-            The person may be seated confidently behind the desk.
-            Keep the head, face, shoulders, and important body features
-            within the image. The office and desk should remain visible.
-            Use natural anatomy and realistic hands.
-            Vertical portrait orientation (2:3).
+            Maintain a strong resemblance to the original person. Do not replace
+            their face with a generic attractive model or change their identity.
 
-            LIGHTING AND STYLE:
-            Photorealistic luxury corporate magazine photography,
-            realistic skin texture, cinematic warm golden highlights,
-            balanced contrast, believable reflections, high detail,
-            natural facial features, and premium international editorial
-            quality.
+            Apply subtle, realistic age progression of approximately ten years.
+            The person should look like a believable older version of themselves,
+            not an entirely different person.
 
-            STRICT EXCLUSIONS:
-            Do not add text, a nameplate, a logo, a watermark, a border,
-            conference branding, captions, graphic overlays, or a frame.
-            Do not invent text or make the image science-fictional.
-            Generate only the portrait and office environment.
+            Keep skin texture realistic, with natural pores and believable
+            facial details. Avoid excessive retouching, artificial skin,
+            exaggerated aging and unrealistic beauty filters.
 
-            The final image should communicate:
-            "Where could this person be ten years from now?"
+            2. OCCUPATION-SPECIFIC FUTURE
 
-            Participant name for contextual reference: %s.
+            The participant's stated occupation is: %s.
+
+            Build the entire professional concept around this occupation.
+
+            Understand what this occupation involves, the professional
+            environment in which it operates, the clothing appropriate to it,
+            the tools or equipment associated with it, and the responsibilities
+            an experienced professional in this field might have.
+
+            Choose a believable future-career scenario that demonstrates
+            significant progress, expertise, confidence and achievement
+            within the stated occupation.
+
+            The occupation must determine the following:
+
+            - WARDROBE: Appropriate professional clothing, uniforms, protective
+              equipment or specialist attire when relevant to the occupation.
+            - ENVIRONMENT: A realistic workplace, studio, clinic, laboratory,
+              office, workshop, construction site, courtroom, classroom,
+              creative space or other setting that genuinely fits the career.
+            - PROPS AND TOOLS: Relevant professional equipment, instruments,
+              documents, technology or materials, used naturally and correctly.
+            - BODY LANGUAGE: A believable professional posture and activity
+              consistent with the person's role and level of expertise.
+            - CAREER ACHIEVEMENT: Subtle environmental details that suggest
+              experience, responsibility, advancement and future success.
+
+            Examples of occupation-specific interpretation:
+
+            A DOCTOR may be portrayed in a premium modern medical environment,
+            wearing appropriate clinical attire and surrounded by realistic
+            medical equipment.
+
+            An ARCHITECT may be portrayed in a sophisticated design studio,
+            with architectural models, drawings, plans and design technology.
+
+            A SOFTWARE ENGINEER may be portrayed in a credible technology
+            workspace, with development tools and engineering equipment relevant
+            to their work.
+
+            AN ENTREPRENEUR may be portrayed leading a credible business,
+            presenting an idea, reviewing operations or working in a space
+            appropriate to the business they have built.
+
+            A LAWYER may be portrayed in a distinguished legal environment,
+            with appropriate professional attire and realistic legal materials.
+
+            A TEACHER may be portrayed in an inspiring, well-equipped educational
+            environment, demonstrating professional confidence and expertise.
+
+            These examples are illustrative, not mandatory templates.
+            Always prioritize the actual occupation supplied by the participant.
+
+            Do not portray every participant as a CEO, business owner or
+            corporate executive. Do not place a person in a medical, legal,
+            technical or other specialist role unless that role fits their
+            stated occupation.
+
+            If the occupation is broad or ambiguous, select a reasonable,
+            respectful and believable interpretation without inventing
+            specific qualifications, credentials or achievements.
+
+            3. PERSONALIZED VISUAL STORYTELLING
+
+            Every visual element should reinforce the participant's own
+            future-career story.
+
+            Make the portrait feel intentionally created for this person,
+            rather than generated from a reusable stock-photo template.
+
+            Use the occupation to guide the setting, clothing, professional
+            equipment, lighting, composition and background details.
+
+            Include several meaningful environmental details that communicate
+            what this professional does and what an accomplished future in
+            that field might look like.
+
+            Make the environment detailed and interesting without allowing
+            background objects to distract from the person's face.
+
+            Show success through professional competence, quality surroundings,
+            thoughtful design, confidence and realistic accomplishments.
+            Avoid excessive luxury, unrelated status symbols or exaggerated
+            displays of wealth.
+
+            Do not invent named employers, real company affiliations, awards,
+            academic degrees, professional licences or specific achievements
+            that the participant did not provide.
+
+            4. WARDROBE AND PROFESSIONAL AUTHENTICITY
+
+            Select clothing that is appropriate to the occupation and the
+            imagined level of experience.
+
+            Prioritize realistic fabrics, accurate garment construction,
+            natural folds, appropriate fit and sophisticated styling.
+
+            Use premium styling where appropriate, without forcing a suit,
+            tie or formal business outfit onto every occupation.
+
+            Respect the person's existing identity and appearance. Avoid
+            unnecessary changes to their ethnicity, skin tone or distinctive
+            features.
+
+            5. ENVIRONMENT AND BACKGROUND DETAIL
+
+            Create a visually rich, believable professional environment
+            appropriate to the specified occupation.
+
+            Include layered background detail, realistic architectural or
+            workplace features, relevant equipment, natural material textures,
+            realistic reflections and subtle environmental depth.
+
+            Use sophisticated composition and carefully balanced lighting.
+
+            Every important background object must make sense in the context
+            of the person's actual profession.
+
+            The environment should communicate a clear story at first glance,
+            even when viewed as a small portrait on a phone screen.
+
+            Avoid random decorative objects, unrelated equipment, confusing
+            background elements and futuristic science-fiction environments.
+
+            6. CRITICAL COMPOSITION: GENEROUS HEADROOM
+
+            This is a vertical portrait designed to be placed inside a
+            predefined portrait frame.
+
+            Leave generous, clearly visible negative space between the top
+            edge of the image and the highest point of the person's head.
+
+            Aim for approximately 15 to 20 percent of the image height as
+            headroom, measured from the top edge to the top of the hair or head.
+
+            Keep the entire head, hairstyle, hairline and forehead comfortably
+            inside the image, with visible background above the head.
+
+            NEVER crop the top of the head, hair, forehead or hairstyle.
+            NEVER position the head so close to the top edge that the portrait
+            feels cramped.
+
+            Place the person's head in the upper-middle portion of the image,
+            leaving breathing room above it while maintaining a balanced
+            portrait composition.
+
+            Frame the person from approximately the waist or mid-torso upward
+            whenever appropriate, allowing the shoulders, upper body and
+            occupation-relevant clothing to remain visible.
+
+            Keep the face prominent and recognizable without making it
+            excessively large in the frame.
+
+            Show enough of the surrounding professional environment to tell
+            the person's career story.
+
+            Keep the important facial features, head, shoulders and upper body
+            within a central safe area. Allow reasonable space around the
+            shoulders and sides of the body.
+
+            Compose the image with the expectation that it will later be
+            cropped to fit a slightly wider vertical photo window. Keep the
+            head and essential facial features safely away from the top,
+            bottom and side edges.
+
+            Prioritize a complete, comfortably framed head over an excessively
+            tight close-up.
+
+            7. POSE, ANATOMY AND EXPRESSION
+
+            Use a confident, natural and approachable expression appropriate
+            to the occupation.
+
+            The person may be standing, seated or naturally engaged in a
+            professional activity, depending on the career scenario.
+
+            Maintain realistic anatomy, natural shoulder proportions, correct
+            hands and fingers, believable posture and physically plausible
+            interaction with any professional equipment.
+
+            Avoid awkward poses, distorted hands, extra fingers, duplicated
+            body parts and unnatural facial expressions.
+
+            8. LIGHTING AND PHOTOGRAPHIC QUALITY
+
+            Use premium international editorial portrait photography.
+
+            Create realistic, flattering, professionally controlled lighting
+            that reveals natural skin texture and preserves the person's likeness.
+
+            Use balanced highlights and shadows, natural depth of field,
+            realistic reflections and carefully controlled color grading.
+
+            Adapt the lighting to the environment. A clinical workspace,
+            creative studio, outdoor professional setting and executive office
+            should not all look identical.
+
+            Produce a sophisticated, cinematic yet believable photograph.
+            The result must look like a real professional portrait captured
+            by an experienced photographer, not a painting, illustration,
+            3D render or artificial fantasy image.
+
+            9. STRICT EXCLUSIONS
+
+            Do not add captions, generated text, a participant name, logos,
+            watermarks, borders, graphic overlays, decorative frames or
+            artificial branding.
+
+            Do not place readable fabricated text on documents, equipment,
+            screens, certificates or nameplates.
+
+            Do not substitute a generic CEO office for an occupation-specific
+            environment.
+
+            Do not sacrifice facial likeness, headroom or professional accuracy
+            for dramatic styling.
+
+            Generate only the portrait and its occupation-appropriate setting.
+            The application will add its own separate branded frame afterward.
+
+            10. PARTICIPANT CONTEXT
+
+            Participant name: %s.
             Current age supplied by participant: %s.
-            Future career description: %s.
+            Stated occupation: %s.
+            Imagined future horizon: approximately ten years.
+
+            Use the name and age as contextual guidance only. Do not render
+            the participant's name or age as visible text in the image.
+
+            FINAL QUALITY STANDARD:
+
+            The result should make the participant recognize themselves,
+            understand their future professional identity from the visual
+            details, and feel that the portrait was specifically created
+            around their occupation and potential.
+
+            Above all, preserve identity, leave generous headroom, create
+            occupation-specific detail and produce a believable, inspiring
+            future-self portrait.
             """.formatted(
                 career,
-                name,
-                age,
+                participantName,
+                participantAge,
                 career
         );
     }
